@@ -1,5 +1,67 @@
-**clickme.exe** will be an AI‑driven forensic tool that dissects phishing emails, scam SMS, and any suspicious message to reveal *why* a human might click. Instead of simply flagging messages as “bad,” it will reverse‑engineer the psychological manipulation behind them – urgency, authority, fear, scarcity – and translate that into a clear, teachable report. The name is deliberately ironic: the file you should never click becomes the tool that teaches you never to click.
+# clickme.exe
 
-The problem this solves is the persistent failure of traditional security awareness. Annual training videos and basic spam filters do not help employees recognize *new* or cleverly crafted social engineering attacks. clickme.exe will turn every real‑world phishing attempt into an instant, personalized learning moment. Security teams will finally have a scalable way to understand *why* certain attacks fool their people, and users will receive actionable feedback – not just a warning.
+**Reverse-Engineering Human Manipulation**  
+AI-powered social engineering forensics platform.
 
-Technically, clickme.exe will work as an end‑to‑end pipeline. A user pastes a message (or uploads a CSV batch) into a Streamlit dashboard. The text is sent to the DeepSeek API with a carefully engineered prompt that forces a structured JSON output: psychological triggers, technical red flags, a narrative summary, an exploitability score (1‑10), and specific defenses for both the user and the IT team. The dashboard will display the report, allow PDF export, and support batch analysis for security teams. All code will be open‑source, with an explicit ethical disclaimer that the tool is for defensive training only.
+---
+
+## Setup
+
+### 1. Install dependencies
+```bash
+pip install -r requirements.txt
+```
+
+### 2. Set your API key
+```bash
+cp .env.example .env
+# Edit .env and add your DeepSeek API key:
+# DEEPSEEK_API_KEY=sk-...
+```
+
+Or set it as an environment variable directly:
+```bash
+export DEEPSEEK_API_KEY=sk-...
+```
+
+### 3. Run
+```bash
+python app.py
+```
+
+Open http://localhost:5000 in your browser.
+
+---
+
+## File structure
+```
+clickme-exe/
+├── app.py                   # Flask app + routes
+├── requirements.txt
+├── .env.example
+├── templates/
+│   ├── landing.html         # Landing page
+│   └── app.html             # Workspace
+├── static/
+│   ├── css/style.css
+│   └── js/app.js
+├── services/
+│   └── ai_service.py        # DeepSeek API integration
+└── utils/
+    └── session_manager.py   # In-memory session state
+```
+
+## Features
+- Single message forensic analysis
+- Batch CSV upload (up to 20 messages)
+- Dashboard with Chart.js visualizations
+- PDF report generation (client-side, jsPDF)
+- Example library with 7 pre-loaded attacks
+- Dark / light theme toggle
+- Zero data persistence — everything is session-only
+
+## Notes
+- All data is ephemeral. Nothing is written to disk or a database.
+- Sessions expire after 1 hour of inactivity.
+- Temp files are cleaned every 30 minutes automatically.
+- The AI model used is `deepseek-chat` from DeepSeek.

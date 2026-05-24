@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>clickme.exe — Workspace</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body class="dark">
+
+<!-- Toast container -->
+<div id="toasts"></div>
+
+<!-- Mobile hamburger -->
+<button class="hamburger" id="hamburger" aria-label="Toggle menu"><i class="fas fa-bars"></i></button>
+
+<div class="layout">
+  <!-- SIDEBAR -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-logo">
+      <i class="fas fa-shield-virus"></i>
+      <div>
+        <div class="logo-name">clickme.exe</div>
+        <div class="logo-tag">SE Forensics</div>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <button class="nav-btn" data-view="dashboard"><i class="fas fa-chart-pie"></i><span>Dashboard</span></button>
+      <button class="nav-btn active" data-view="analysis"><i class="fas fa-microscope"></i><span>Single Analysis</span></button>
+      <button class="nav-btn" data-view="batch"><i class="fas fa-upload"></i><span>Batch Upload</span></button>
+      <button class="nav-btn" data-view="analytics"><i class="fas fa-chart-bar"></i><span>Analytics</span></button>
+      <button class="nav-btn" data-view="examples"><i class="fas fa-book-open"></i><span>Examples</span></button>
+      <button class="nav-btn" data-view="export"><i class="fas fa-file-export"></i><span>Export Report</span></button>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="session-info">
+        <span class="session-label">Session</span>
+        <span class="session-id" id="sessionDisplay">—</span>
+      </div>
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+        <i class="fas fa-moon" id="themeIcon"></i>
+        <span id="themeLabel">Dark mode</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- OVERLAY for mobile -->
+  <div class="overlay" id="overlay"></div>
+
+  <!-- MAIN -->
+  <main class="main">
+    <header class="topbar">
+      <div class="topbar-title" id="topbarTitle">Single Analysis</div>
+      <div class="topbar-right">
+        <a href="/" class="back-link"><i class="fas fa-arrow-left"></i> Home</a>
+      </div>
+    </header>
+
+    <div class="content-area">
+
+      <!-- ===== DASHBOARD ===== -->
+      <section class="view" id="view-dashboard">
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-label">Total Analyses</div>
+            <div class="stat-val" id="stat-total">0</div>
+            <div class="stat-hint">this session</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Avg Exploitability</div>
+            <div class="stat-val" id="stat-avg">—</div>
+            <div class="stat-hint">out of 100</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-label">Top Trigger</div>
+            <div class="stat-val stat-sm" id="stat-trigger">—</div>
+            <div class="stat-hint">most detected</div>
+          </div>
+        </div>
+        <div class="charts-grid">
+          <div class="chart-card">
+            <div class="chart-card-title">Psychological Triggers</div>
+            <div class="chart-wrap"><canvas id="triggersChart"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-card-title">Attack Categories</div>
+            <div class="chart-wrap"><canvas id="categoriesChart"></canvas></div>
+          </div>
+          <div class="chart-card">
+            <div class="chart-card-title">Risk Distribution</div>
+            <div class="chart-wrap"><canvas id="riskChart"></canvas></div>
+          </div>
+        </div>
+        <div class="empty-state" id="dashboard-empty">
+          <i class="fas fa-shield-halved"></i>
+          <p>No analyses yet this session.</p>
+          <button class="btn-primary" onclick="switchView('analysis')">Run your first analysis →</button>
+        </div>
+      </section>
+
+      <!-- ===== SINGLE ANALYSIS ===== -->
+      <section class="view active" id="view-analysis">
+        <div class="glass-card">
+          <label class="input-label"><i class="fas fa-comment-dots"></i> Suspicious message</label>
+          <textarea id="msgInput" class="msg-textarea" placeholder="Paste any phishing email, SMS, suspicious DM, or social engineering message here…" rows="6"></textarea>
+          <div class="input-actions">
+            <span class="char-count" id="charCount">0 / 10,000</span>
+            <button class="btn-primary" id="analyzeBtn" onclick="runAnalysis()">
+              <i class="fas fa-microscope"></i> Analyze Threat
+            </button>
+          </div>
+        </div>
+
+        <!-- Loading -->
+        <div class="loading-card" id="loadingCard" style="display:none">
+          <div class="loading-spinner"><i class="fas fa-atom fa-spin"></i></div>
+          <div class="loading-text">Deep forensic analysis in progress…</div>
+          <div class="loading-sub">Mapping psychological triggers and attack vectors</div>
+        </div>
+
+        <!-- Report -->
+        <div class="report-card" id="reportCard" style="display:none">
+          <div class="report-header">
+            <div>
+              <div class="report-title"><i class="fas fa-file-shield"></i> Forensic Analysis Report</div>
+              <div class="report-meta" id="reportMeta">Generated just now</div>
+            </div>
+            <span class="risk-badge" id="reportRisk">—</span>
+          </div>
+
+          <!-- Score + Category row -->
+          <div class="score-row">
+            <div class="gauge-wrap">
+              <canvas id="gaugeCanvas" width="120" height="120"></canvas>
+              <div class="gauge-center">
+                <div class="gauge-num" id="gaugeNum">—</div>
+                <div class="gauge-label">exploitability</div>
+              </div>
+            </div>
+            <div class="score-details">
+              <div class="detail-row">
+                <span class="detail-label">Attack Category</span>
+                <span class="detail-val" id="reportCategory">—</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">Confidence</span>
+                <span class="detail-val confidence-val" id="reportConfidence">—</span>
+              </div>
+              <div class="detail-row">
+                <span class="detail-label">MITRE ATT&CK</span>
+                <div class="mitre-tags" id="reportMitre"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Triggers -->
+          <div class="section-block">
+            <div class="block-label">Psychological Triggers Detected</div>
+            <div class="tags-row" id="reportTriggers"></div>
+          </div>
+
+          <!-- Technical indicators -->
+          <div class="section-block">
+            <div class="block-label collapsible-label" onclick="toggleBlock(this)">
+              Technical Indicators <i class="fas fa-chevron-down"></i>
+            </div>
+            <div class="collapsible-body">
+              <ul class="indicator-list" id="reportIndicators"></ul>
+            </div>
+          </div>
+
+          <!-- Narrative -->
+          <div class="section-block">
+            <div class="block-label collapsible-label" onclick="toggleBlock(this)">
+              Narrative Summary <i class="fas fa-chevron-down"></i>
+            </div>
+            <div class="collapsible-body">
+              <p class="narrative-text" id="reportNarrative"></p>
+            </div>
+          </div>
+
+          <!-- Defense -->
+          <div class="defense-grid">
+            <div class="defense-card">
+              <div class="defense-title"><i class="fas fa-user-shield"></i> User Defense</div>
+              <p class="defense-text" id="reportUserDefense"></p>
+            </div>
+            <div class="defense-card defense-it">
+              <div class="defense-title"><i class="fas fa-server"></i> IT / SOC Defense</div>
+              <p class="defense-text" id="reportITDefense"></p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== BATCH UPLOAD ===== -->
+      <section class="view" id="view-batch">
+        <div class="glass-card">
+          <label class="input-label"><i class="fas fa-upload"></i> Upload CSV file</label>
+          <div class="drop-zone" id="dropZone" onclick="document.getElementById('csvInput').click()">
+            <i class="fas fa-cloud-arrow-up drop-icon"></i>
+            <div class="drop-title">Drag & drop or click to upload</div>
+            <div class="drop-sub">CSV with a <code>message</code> column · Max 20 rows · 16MB</div>
+            <input type="file" id="csvInput" accept=".csv" style="display:none" onchange="handleCsvUpload(this)">
+          </div>
+          <div class="batch-format">
+            <div class="format-label">Expected format:</div>
+            <code class="format-code">message<br>"Urgent: Your account was compromised…"<br>"Congratulations, you won an iPhone…"</code>
+          </div>
+        </div>
+
+        <div class="loading-card" id="batchLoading" style="display:none">
+          <div class="loading-spinner"><i class="fas fa-atom fa-spin"></i></div>
+          <div class="loading-text" id="batchLoadingText">Processing messages…</div>
+        </div>
+
+        <div id="batchResults" style="display:none">
+          <div class="batch-summary" id="batchSummary"></div>
+          <div class="batch-list" id="batchList"></div>
+        </div>
+      </section>
+
+      <!-- ===== ANALYTICS ===== -->
+      <section class="view" id="view-analytics">
+        <div class="analytics-grid">
+          <div class="glass-card analytics-card">
+            <div class="analytics-title">Session Overview</div>
+            <div class="analytics-stats">
+              <div class="a-stat"><span class="a-num" id="an-total">0</span><span class="a-label">Analyses</span></div>
+              <div class="a-stat"><span class="a-num" id="an-avg">—</span><span class="a-label">Avg Score</span></div>
+            </div>
+          </div>
+          <div class="glass-card analytics-card">
+            <div class="analytics-title">Top Psychological Triggers</div>
+            <div class="trigger-breakdown" id="triggerBreakdown"></div>
+          </div>
+          <div class="glass-card analytics-card span-2">
+            <div class="analytics-title">Category Breakdown</div>
+            <div class="cat-breakdown" id="catBreakdown"></div>
+          </div>
+        </div>
+        <div class="empty-state" id="analytics-empty">
+          <i class="fas fa-chart-bar"></i>
+          <p>Analyze some messages to see session analytics.</p>
+          <button class="btn-primary" onclick="switchView('analysis')">Start analyzing →</button>
+        </div>
+      </section>
+
+      <!-- ===== EXAMPLES ===== -->
+      <section class="view" id="view-examples">
+        <p class="view-intro">Pre-loaded real-world phishing examples. Click "Load & Analyze" to run forensics instantly.</p>
+        <div class="examples-grid" id="examplesGrid"></div>
+      </section>
+
+      <!-- ===== EXPORT ===== -->
+      <section class="view" id="view-export">
+        <div class="glass-card export-card">
+          <div class="export-icon"><i class="fas fa-file-pdf"></i></div>
+          <div class="export-title">Generate Session Report</div>
+          <div class="export-desc">Creates a PDF containing all analyses from this session, including scores, triggers, and defense recommendations.</div>
+          <div class="export-stats" id="exportStats">
+            <span id="exportCount">0 analyses</span> ready to export
+          </div>
+          <button class="btn-primary export-btn" onclick="generatePDF()">
+            <i class="fas fa-download"></i> Download PDF Report
+          </button>
+          <div class="export-note">All data remains in your browser. Nothing is sent to a server for export.</div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+</div>
+
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>
