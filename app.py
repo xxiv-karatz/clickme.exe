@@ -7,8 +7,12 @@ from utils.session_manager import SessionManager
 
 # Configure Flask to use templates and static folders
 app = Flask(__name__, template_folder='templates', static_folder='static')
-app.secret_key = os.urandom(24)
+app.secret_key = os.environ.get('SECRET_KEY', 'fallback-dev-key-change-this')
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
+
+# Create temp folders if they don't exist
+for folder in ['temp/uploads', 'temp/exports']:
+    os.makedirs(folder, exist_ok=True)
 
 session_manager = SessionManager()
 
@@ -17,6 +21,8 @@ def cleanup_worker():
         time.sleep(1800)
         session_manager.cleanup_old_sessions()
         for folder in ['temp/uploads', 'temp/exports']:
+            if not os.path.exists(folder):
+                continue
             for f in os.listdir(folder):
                 fp = os.path.join(folder, f)
                 if os.path.isfile(fp) and time.time() - os.path.getmtime(fp) > 3600:
