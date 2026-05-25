@@ -1,6 +1,7 @@
 import os
 import threading
 import time
+import concurrent.futures
 from flask import Flask, request, jsonify, render_template, session
 from services.ai_service import analyze_message, analyze_batch
 from utils.session_manager import SessionManager
@@ -71,18 +72,62 @@ def batch_analyze():
     f = request.files['file']
     if not f.filename.endswith('.csv'):
         return jsonify({'error': 'Only CSV files accepted'}), 400
+    
+    # Check file size (max 3MB for Render free tier)
+    f.seek(0, 2)
+    file_size = f.tell()
+    f.seek(0)
+    if file_size > 3 * 1024 * 1024:
+        return jsonify({'error': 'File too large (max 3MB)'}), 400
+    
     import csv, io
     content = f.read().decode('utf-8', errors='ignore')
-    reader = csv.DictReader(io.StringIO(content))
-    if 'message' not in (reader.fieldnames or []):
-        return jsonify({'error': 'CSV must have a "message" column'}), 400
-    messages = [row['message'].strip() for row in reader if row.get('message','').strip()][:20]
+    
+    try:
+        reader = csv.DictReader(io.StringIO(content))
+        if not reader.fieldnames or 'message' not in reader.fieldnames:
+            return jsonify({'error': 'CSV must have a "message" column'}), 400
+        
+        messages = []
+        for row in reader:
+            msg = row.get('message', '').strip()
+            if msg and len(msg) > 0:
+                # Truncate very long messages to prevent API issues
+                messages.append(msg[:1500])
+                if len(messages) >= 8:  # Limit to 8 messages for faster processing
+                    break
+    except Exception as e:
+        return jsonify({'error': f'CSV parsing error: {str(e)}'}), 400
+    
     if not messages:
-        return jsonify({'error': 'No messages found in CSV'}), 400
-    results = analyze_batch(messages)
-    for r in results:
-        if 'error' not in r:
-            session_manager.add_analysis(sid, r)
+        return jsonify({'error': 'No valid messages found in CSV'}), 400
+    
+    # Process messages with timeout and concurrency limit
+    results = []
+    
+    def process_single_message(msg, idx):
+        try:
+            result = analyze_message(msg)
+            if 'error' not in result:
+                result['original_message'] = msg[:80] + ('...' if len(msg) > 80 else '')
+                return result
+            else:
+                return {'error': result['error'], 'original_message': msg[:80]}
+        except Exception as e:
+            return {'error': str(e), 'original_message': msg[:80]}
+    
+    # Use ThreadPoolExecutor with timeout
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        future_to_msg = {executor.submit(process_single_message, msg, i): i for i, msg in enumerate(messages)}
+        for future in concurrent.futures.as_completed(future_to_msg, timeout=90):
+            try:
+                result = future.result(timeout=30)
+                if 'error' not in result:
+                    session_manager.add_analysis(sid, result)
+                results.append(result)
+            except concurrent.futures.TimeoutError:
+                results.append({'error': 'Analysis timed out', 'original_message': 'Timeout'})
+    
     agg = session_manager.get_analytics(sid)
     return jsonify({'results': results, 'aggregates': agg})
 

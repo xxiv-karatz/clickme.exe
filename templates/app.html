@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>clickme.exe — Workspace</title>
+<title>Workspace</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
@@ -11,6 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<link rel="icon" type="image/png" href="/static/favicon.ico">
 </head>
 <body class="dark">
 
@@ -23,7 +24,7 @@
 <div class="layout">
   <!-- SIDEBAR -->
   <aside class="sidebar" id="sidebar">
-    <div class="sidebar-logo">
+    <div class="sidebar-logo" onclick="window.location.href='/'" style="cursor:pointer;">
       <i class="fas fa-shield-virus"></i>
       <div>
         <div class="logo-name">clickme.exe</div>
@@ -206,7 +207,7 @@
           <div class="drop-zone" id="dropZone" onclick="document.getElementById('csvInput').click()">
             <i class="fas fa-cloud-arrow-up drop-icon"></i>
             <div class="drop-title">Drag & drop or click to upload</div>
-            <div class="drop-sub">CSV with a <code>message</code> column · Max 20 rows · 16MB</div>
+            <div class="drop-sub">CSV with a <code>message</code> column · Max 8 rows · 3MB</div>
             <input type="file" id="csvInput" accept=".csv" style="display:none" onchange="handleCsvUpload(this)">
           </div>
           <div class="batch-format">
