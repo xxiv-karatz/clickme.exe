@@ -94,7 +94,7 @@ def batch_analyze():
             if msg and len(msg) > 0:
                 # Truncate very long messages to prevent API issues
                 messages.append(msg[:1500])
-                if len(messages) >= 8:  # Limit to 8 messages for faster processing
+                if len(messages) >= 10:  # Limit to 10 messages for faster processing
                     break
     except Exception as e:
         return jsonify({'error': f'CSV parsing error: {str(e)}'}), 400

@@ -20,7 +20,7 @@ It is built for security professionals, IT/SOC teams, and security awareness edu
 ## Features
 
 - **Single message analysis** — paste any suspicious message for instant forensic breakdown
-- **Batch CSV upload** — analyze up to 8 messages at once (requires a `message` column, max 3 MB)
+- **Batch CSV upload** — analyze up to 10 messages at once (requires a `message` column, max 3 MB)
 - **Session dashboard** — real-time analytics and Chart.js visualizations
 - **Example library** — 7 pre-loaded real-world phishing samples
 - **PDF export** — generate professional forensic reports client-side via jsPDF
@@ -138,7 +138,7 @@ message
 "IT Department: Your password expires in 24 hours. Update at the link below."
 ```
 
-**Limits:** max 8 messages per upload · max 3 MB file size · messages truncated to 1,500 characters
+**Limits:** max 10 messages per upload · max 3 MB file size · messages truncated to 1,500 characters
 
 ---
 
@@ -176,7 +176,7 @@ message
 **Batch upload fails**
 - Confirm the CSV has a `message` column (exact casing).
 - Keep the file under 3 MB and messages under 1,500 characters.
-- Try uploading 5–6 messages instead of the full 8.
+- Try uploading 5–6 messages instead of the full 10.
 
 **`DEEPSEEK_API_KEY not set` error**
 - Verify the key is present in your `.env` file or Render environment variables.
