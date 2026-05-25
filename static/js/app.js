@@ -796,98 +796,117 @@ async function generatePDF() {
 
     y = 50;
 
+    // Line height constants matching font sizes used below
+    const LH8  = 4.5;  // font 8
+    const LH85 = 5.0;  // font 8.5
+    const LH7  = 4.0;  // font 7 / 7.5
+    const PAD  = 4;    // inner horizontal padding inside boxes
+    const textW = usable - PAD * 2 - 2; // usable text width inside a full-width box (left accent=2)
+
     // MITRE tags inline
     if ((a.mitre_attack_mapping||[]).length) {
       doc.setFontSize(7); doc.setTextColor(100,116,139);
       doc.text('MITRE ATT&CK:', ml, y);
-      let mx = ml + 24;
+      let mx = ml + 26;
       (a.mitre_attack_mapping||[]).forEach(t => {
+        // Measure tag width properly: ~1.7pt per char at size 7 + padding
+        const tw = doc.getTextWidth(t) + 6;
+        if (mx + tw > pw - mr) { y += 8; mx = ml + 26; }
         doc.setFillColor(30, 41, 59);
-        doc.roundedRect(mx - 1, y - 4, t.length * 1.8 + 4, 6, 1, 1, 'F');
+        doc.roundedRect(mx - 1, y - 4, tw, 6, 1, 1, 'F');
         doc.setTextColor(99,179,237); doc.setFontSize(7);
-        doc.text(t, mx + 1, y);
-        mx += t.length * 1.8 + 7;
+        doc.text(t, mx + 2, y);
+        mx += tw + 4;
       });
-      y += 8;
+      y += 9;
     }
 
     // Triggers
-    y = pdfCheckPage(doc, y, 16);
+    y = pdfCheckPage(doc, y, 18);
     y = pdfSectionLabel(doc, 'Psychological Triggers', ml, y);
     let tx = ml;
-    const trow = y;
+    doc.setFontSize(7.5);
     (a.psychological_triggers||[]).forEach(t => {
-      const tw = t.length * 1.9 + 8;
-      if (tx + tw > pw - mr) { y += 8; tx = ml; }
+      const label = t.replace(/_/g,' ');
+      const tw = doc.getTextWidth(label) + 8;
+      if (tx + tw > pw - mr) { y += 9; tx = ml; }
       doc.setFillColor(30, 41, 59);
       doc.roundedRect(tx, y - 4.5, tw, 6.5, 1.5, 1.5, 'F');
       doc.setFillColor(59,130,246);
       doc.roundedRect(tx, y - 4.5, 1.5, 6.5, 0, 0, 'F');
-      doc.setFontSize(7.5); doc.setTextColor(148,163,184);
-      doc.text(t.replace(/_/g,' '), tx + 3, y);
+      doc.setTextColor(148,163,184);
+      doc.text(label, tx + 3.5, y);
       tx += tw + 3;
     });
-    y += 10;
+    y += 11;
 
-    // Technical indicators
+    // Technical indicators — wrap long text inside the row box
     y = pdfCheckPage(doc, y, 20);
     y = pdfSectionLabel(doc, 'Technical Indicators', ml, y);
+    doc.setFontSize(8);
     (a.technical_indicators||[]).forEach(ind => {
-      y = pdfCheckPage(doc, y, 8);
+      const indText = ind.replace(/_/g,' ');
+      const indLines = doc.splitTextToSize(indText, usable - 9); // 9 = left-accent(2) + gap(2) + pad(5)
+      const rowH = indLines.length * LH8 + 3;
+      y = pdfCheckPage(doc, y, rowH + 2);
       doc.setFillColor(20, 30, 48);
-      doc.rect(ml, y - 3.5, usable, 5.5, 'F');
+      doc.rect(ml, y - 3.5, usable, rowH, 'F');
       doc.setFillColor(239, 68, 68);
-      doc.rect(ml, y - 3.5, 2, 5.5, 'F');
-      doc.setFontSize(8); doc.setTextColor(203, 213, 225);
-      doc.text(ind.replace(/_/g,' '), ml + 5, y);
-      y += 7;
+      doc.rect(ml, y - 3.5, 2, rowH, 'F');
+      doc.setTextColor(203, 213, 225);
+      doc.text(indLines, ml + 6, y);
+      y += rowH + 2;
     });
     y += 3;
 
-    // Narrative
-    y = pdfCheckPage(doc, y, 24);
+    // Narrative — measure height first, then draw box, then text
+    y = pdfCheckPage(doc, y, 28);
     y = pdfSectionLabel(doc, 'Attack Narrative', ml, y);
+    doc.setFontSize(8.5);
+    const narLines = doc.splitTextToSize(a.narrative_summary||'', textW);
+    const narH = narLines.length * LH85 + 8;
     doc.setFillColor(14, 20, 34);
-    const narLines = doc.splitTextToSize(a.narrative_summary||'', usable - 6);
-    doc.roundedRect(ml, y - 3, usable, narLines.length * 5 + 6, 2, 2, 'F');
+    doc.roundedRect(ml, y - 3, usable, narH, 2, 2, 'F');
     doc.setFillColor(99, 102, 241);
-    doc.roundedRect(ml, y - 3, 2, narLines.length * 5 + 6, 1, 1, 'F');
-    doc.setFontSize(8.5); doc.setTextColor(203, 213, 225);
-    doc.text(narLines, ml + 5, y);
-    y += narLines.length * 5 + 8;
+    doc.roundedRect(ml, y - 3, 2, narH, 1, 1, 'F');
+    doc.setTextColor(203, 213, 225);
+    doc.text(narLines, ml + PAD + 2, y);
+    y += narH + 5;
 
-    // Defense grid (two columns)
-    y = pdfCheckPage(doc, y, 36);
-    const halfW = (usable - 4) / 2;
+    // Defense grid — stack vertically instead of side-by-side to avoid overflow
+    const defW = usable;
+    const defTextW = defW - PAD * 2 - 2;
 
-    // User defense
+    // User defense block
+    y = pdfCheckPage(doc, y, 30);
     y = pdfSectionLabel(doc, 'User Defense', ml, y);
-    const udLines = doc.splitTextToSize(a.defense_for_user||'', halfW - 8);
-    const udH = udLines.length * 4.8 + 10;
+    doc.setFontSize(8);
+    const udLines = doc.splitTextToSize(a.defense_for_user||'', defTextW);
+    const udH = udLines.length * LH8 + 14; // 14 = top label (8) + padding
     doc.setFillColor(14, 20, 34);
-    doc.roundedRect(ml, y - 3, halfW, udH, 2, 2, 'F');
+    doc.roundedRect(ml, y - 3, defW, udH, 2, 2, 'F');
     doc.setFillColor(34, 197, 94);
     doc.roundedRect(ml, y - 3, 2, udH, 1, 1, 'F');
-    doc.setFontSize(8); doc.setTextColor(167, 243, 208);
-    doc.text('For End Users', ml + 5, y + 1);
+    doc.setTextColor(167, 243, 208);
+    doc.text('For End Users', ml + PAD + 2, y + 2);
     doc.setTextColor(148, 163, 184);
-    doc.text(udLines, ml + 5, y + 7);
+    doc.text(udLines, ml + PAD + 2, y + 9);
+    y += udH + 5;
 
-    // IT defense (same row)
-    const itX = ml + halfW + 4;
-    y = pdfSectionLabel(doc, 'IT / SOC Defense', itX, y - 5) - 0;
-    const itLines = doc.splitTextToSize(a.defense_for_it||'', halfW - 8);
-    const itH = Math.max(udH, itLines.length * 4.8 + 10);
+    // IT defense block
+    y = pdfCheckPage(doc, y, 30);
+    y = pdfSectionLabel(doc, 'IT / SOC Defense', ml, y);
+    const itLines = doc.splitTextToSize(a.defense_for_it||'', defTextW);
+    const itH = itLines.length * LH8 + 14;
     doc.setFillColor(14, 20, 34);
-    doc.roundedRect(itX, y - 3, halfW, itH, 2, 2, 'F');
+    doc.roundedRect(ml, y - 3, defW, itH, 2, 2, 'F');
     doc.setFillColor(139, 92, 246);
-    doc.roundedRect(itX, y - 3, 2, itH, 1, 1, 'F');
-    doc.setFontSize(8); doc.setTextColor(196, 181, 253);
-    doc.text('For Security Teams', itX + 5, y + 1);
+    doc.roundedRect(ml, y - 3, 2, itH, 1, 1, 'F');
+    doc.setTextColor(196, 181, 253);
+    doc.text('For Security Teams', ml + PAD + 2, y + 2);
     doc.setTextColor(148, 163, 184);
-    doc.text(itLines, itX + 5, y + 7);
-
-    y += Math.max(udH, itH) + 5;
+    doc.text(itLines, ml + PAD + 2, y + 9);
+    y += itH + 5;
 
     // Footer line
     doc.setFillColor(22, 32, 52);
