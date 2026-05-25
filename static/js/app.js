@@ -709,60 +709,102 @@ async function generatePDF() {
   const palette = ['#3b82f6','#8b5cf6','#ef4444','#f59e0b','#22c55e','#06b6d4','#ec4899'];
   const riskColors2 = {low:'#22c55e',medium:'#f59e0b',high:'#ef4444',critical:'#dc2626'};
 
+  // Layout: two equal columns side by side
+  // Col A (left): triggers bar chart
+  // Col B (right): categories doughnut on top, risk pie below
+  // Full width below: individual exploitability scores
+  const colGap = 4;
+  const colW = (usable - colGap) / 2; // each column ~85mm
+
+  // Canvas pixel dims must match the mm aspect ratio so charts aren't stretched.
+  // We render at 3px per mm for sharpness.
+  const PX = 3;
+  const trigH_mm = 52;   // taller bar chart so labels aren't cramped
+  const catH_mm  = 48;   // doughnut (squarer looks better)
+  const riskH_mm = 38;   // pie (squarish)
+
   const [trigChart, catChart, riskChart] = await Promise.all([
-    renderChartToBase64('bar', trigSorted.map(([t])=>t.replace(/_/g,' ')), trigSorted.map(([,v])=>v), palette.slice(0,trigSorted.length), 340, 155),
-    renderChartToBase64('doughnut', catSorted.map(([c])=>formatCategory(c)), catSorted.map(([,v])=>v), palette.slice(0,catSorted.length), 220, 155),
-    renderChartToBase64('pie', riskData.map(([k])=>k), riskData.map(([,v])=>v), riskData.map(([k])=>riskColors2[k]||'#64748b'), 190, 155)
+    renderChartToBase64('bar',
+      trigSorted.map(([t])=>t.replace(/_/g,' ')),
+      trigSorted.map(([,v])=>v),
+      palette.slice(0, trigSorted.length),
+      Math.round(colW * PX), Math.round(trigH_mm * PX)),
+    renderChartToBase64('doughnut',
+      catSorted.map(([c])=>formatCategory(c)),
+      catSorted.map(([,v])=>v),
+      palette.slice(0, catSorted.length),
+      Math.round(colW * PX), Math.round(catH_mm * PX)),
+    renderChartToBase64('pie',
+      riskData.map(([k])=>k),
+      riskData.map(([,v])=>v),
+      riskData.map(([k])=>riskColors2[k]||'#64748b'),
+      Math.round(colW * PX), Math.round(riskH_mm * PX))
   ]);
 
-  // Place charts: triggers bar (wider), cats doughnut, risk pie
-  const chartH = 42; // mm height
-  y = pdfCheckPage(doc, y, chartH + 16);
+  const LABEL_H = 8; // mm reserved for section label inside each card
 
-  // Triggers bar - left 60%
-  const trigW = usable * 0.56;
+  // ── Row 1: Triggers (left) + Categories doughnut (right) ──────────
+  const row1H = Math.max(trigH_mm, catH_mm) + LABEL_H + 2;
+  y = pdfCheckPage(doc, y, row1H + 4);
+
+  // Triggers bar
   doc.setFillColor(15, 22, 38);
-  doc.roundedRect(ml, y, trigW, chartH + 8, 2, 2, 'F');
-  doc.setFontSize(7); doc.setTextColor(100,116,139);
+  doc.roundedRect(ml, y, colW, row1H, 2, 2, 'F');
+  doc.setFontSize(7); doc.setTextColor(100, 116, 139);
   doc.text('PSYCHOLOGICAL TRIGGERS', ml + 3, y + 5);
-  doc.addImage(trigChart, 'PNG', ml + 2, y + 7, trigW - 4, chartH);
+  doc.addImage(trigChart, 'PNG', ml + 2, y + LABEL_H, colW - 4, trigH_mm);
 
-  // Categories doughnut - right top
-  const catX = ml + trigW + 4;
-  const smallW = usable - trigW - 4;
+  // Categories doughnut
+  const col2X = ml + colW + colGap;
   doc.setFillColor(15, 22, 38);
-  doc.roundedRect(catX, y, smallW, chartH + 8, 2, 2, 'F');
-  doc.setFontSize(7); doc.setTextColor(100,116,139);
-  doc.text('ATTACK CATEGORIES', catX + 3, y + 5);
-  doc.addImage(catChart, 'PNG', catX + 1, y + 7, smallW - 2, chartH);
-  y += chartH + 12;
+  doc.roundedRect(col2X, y, colW, row1H, 2, 2, 'F');
+  doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+  doc.text('ATTACK CATEGORIES', col2X + 3, y + 5);
+  doc.addImage(catChart, 'PNG', col2X + 2, y + LABEL_H, colW - 4, catH_mm);
+  y += row1H + 4;
 
-  // Risk pie - small, beneath right column
-  y = pdfCheckPage(doc, y, 36);
-  const riskChartW = smallW;
-  doc.setFillColor(15, 22, 38);
-  doc.roundedRect(catX, y, riskChartW, 34, 2, 2, 'F');
-  doc.setFontSize(7); doc.setTextColor(100,116,139);
-  doc.text('RISK DISTRIBUTION', catX + 3, y + 5);
-  doc.addImage(riskChart, 'PNG', catX + 1, y + 7, riskChartW - 2, 26);
+  // ── Row 2: Exploitability scores (left) + Risk pie (right) ─────────
+  // Calculate how many score entries fit: each entry = label (4mm) + bar (5mm) = 9mm
+  // Box inner height = riskH_mm (match risk pie height)
+  const maxScoreEntries = Math.min(analyses.length, 8);
+  const entryH = 8.5; // label + bar + gap per entry
+  const scoreBoxH = riskH_mm + LABEL_H + 2; // match risk card height
+  const fittingEntries = Math.min(maxScoreEntries, Math.floor((scoreBoxH - LABEL_H - 2) / entryH));
 
-  // Score distribution bar chart beside risk pie
-  const scoreChartW = trigW;
+  y = pdfCheckPage(doc, y, scoreBoxH + 4);
+
+  // Score bars card
   doc.setFillColor(15, 22, 38);
-  doc.roundedRect(ml, y, scoreChartW, 34, 2, 2, 'F');
-  doc.setFontSize(7); doc.setTextColor(100,116,139);
+  doc.roundedRect(ml, y, colW, scoreBoxH, 2, 2, 'F');
+  doc.setFontSize(7); doc.setTextColor(100, 116, 139);
   doc.text('INDIVIDUAL EXPLOITABILITY SCORES', ml + 3, y + 5);
-  let sy = y + 10;
-  const scoreBarW = scoreChartW - 8;
-  analyses.slice(0, 8).forEach((a, i) => {
-    const label = `#${i+1} ${formatCategory(a.attack_category)}`.slice(0, 28);
-    doc.setFontSize(6.5); doc.setTextColor(148,163,184);
-    doc.text(label, ml + 4, sy);
-    sy = pdfScoreBar(doc, a.exploitability_score||0, ml + 4, sy + 1, scoreBarW);
-    sy += 0.5;
+
+  const scoreInnerX = ml + 3;
+  const scoreBarW = colW - 8; // bar spans from scoreInnerX inward, right edge = ml + colW - 5
+  let sy = y + LABEL_H;
+  analyses.slice(0, fittingEntries).forEach((a, i) => {
+    // Truncate label so it never overruns: max width is scoreBarW in mm at font 6
+    const rawLabel = `#${i+1} ${formatCategory(a.attack_category)}`;
+    // ~1.5pt per char at size 6 — split to one line within scoreBarW
+    const labelLines = doc.setFontSize(6) || doc.splitTextToSize(rawLabel, scoreBarW);
+    doc.setFontSize(6); doc.setTextColor(148, 163, 184);
+    doc.text(labelLines[0], scoreInnerX, sy);
+    sy += 3.5;
+    sy = pdfScoreBar(doc, a.exploitability_score || 0, scoreInnerX, sy, scoreBarW);
+    sy += 1;
   });
 
-  y += 40;
+  // Risk pie card
+  doc.setFillColor(15, 22, 38);
+  doc.roundedRect(col2X, y, colW, scoreBoxH, 2, 2, 'F');
+  doc.setFontSize(7); doc.setTextColor(100, 116, 139);
+  doc.text('RISK DISTRIBUTION', col2X + 3, y + 5);
+  // Place pie image preserving its aspect ratio (it's square canvas → square display)
+  const pieSize = colW - 4; // square
+  const pieY = y + LABEL_H + (scoreBoxH - LABEL_H - pieSize) / 2; // vertically center
+  doc.addImage(riskChart, 'PNG', col2X + 2, Math.max(y + LABEL_H, pieY), pieSize, Math.min(pieSize, riskH_mm));
+
+  y += scoreBoxH + 6;
 
   // ── Individual Analysis Pages ─────────────────────────────────────
   analyses.forEach((a, idx) => {
