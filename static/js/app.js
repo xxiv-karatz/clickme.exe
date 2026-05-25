@@ -782,13 +782,13 @@ async function generatePDF() {
   const scoreInnerX = ml + 3;
   const scoreBarW = colW - 8; // bar spans from scoreInnerX inward, right edge = ml + colW - 5
   let sy = y + LABEL_H;
+  doc.setFontSize(6);
   analyses.slice(0, fittingEntries).forEach((a, i) => {
-    // Truncate label so it never overruns: max width is scoreBarW in mm at font 6
     const rawLabel = `#${i+1} ${formatCategory(a.attack_category)}`;
-    // ~1.5pt per char at size 6 — split to one line within scoreBarW
-    const labelLines = doc.setFontSize(6) || doc.splitTextToSize(rawLabel, scoreBarW);
-    doc.setFontSize(6); doc.setTextColor(148, 163, 184);
-    doc.text(labelLines[0], scoreInnerX, sy);
+    const labelLines = doc.splitTextToSize(rawLabel, scoreBarW);
+    const label = (labelLines && labelLines[0]) ? String(labelLines[0]) : rawLabel.slice(0, 30);
+    doc.setTextColor(148, 163, 184);
+    doc.text(label, scoreInnerX, sy);
     sy += 3.5;
     sy = pdfScoreBar(doc, a.exploitability_score || 0, scoreInnerX, sy, scoreBarW);
     sy += 1;
@@ -826,9 +826,13 @@ async function generatePDF() {
     doc.setFontSize(8); doc.setTextColor(148,163,184); doc.setFont(undefined,'normal');
     doc.text(`Risk: ${(a.risk_level||'').toUpperCase()}   Exploitability: ${a.exploitability_score}/100   Confidence: ${a.confidence_score}%`, ml + 4, 28);
     if (a.original_message) {
+      doc.setFontSize(7.5); doc.setFont(undefined,'italic');
       const msgPreview = doc.splitTextToSize('"' + a.original_message + '"', usable - 30);
-      doc.setFontSize(7.5); doc.setTextColor(71,85,105); doc.setFont(undefined,'italic');
-      doc.text(msgPreview.slice(0,2), ml + 4, 36);
+      const msgLines = msgPreview.slice(0, 2).filter(l => typeof l === 'string');
+      if (msgLines.length) {
+        doc.setTextColor(71, 85, 105);
+        doc.text(msgLines, ml + 4, 36);
+      }
       doc.setFont(undefined,'normal');
     }
 
