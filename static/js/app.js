@@ -567,40 +567,58 @@ function renderGaugeToBase64(score, size = 100) {
 
 // Render a chart to base64 using a hidden canvas
 function renderChartToBase64(type, labels, data, colors, width=300, height=160) {
-  return new Promise(resolve => {
-    const c = document.createElement('canvas');
-    c.width = width; c.height = height;
-    const ctx = c.getContext('2d');
-    ctx.fillStyle = '#111827';
-    ctx.fillRect(0, 0, width, height);
-    const chart = new Chart(ctx, {
-      type,
-      data: {
-        labels,
-        datasets: [{ data, backgroundColor: colors, borderWidth: 0, borderRadius: type === 'bar' ? 4 : 0 }]
-      },
-      options: {
-        animation: false,
-        plugins: {
-          legend: {
-            display: type !== 'bar',
-            labels: { color: '#94a3b8', font: { size: 10 }, padding: 8, boxWidth: 10 }
-          }
+  return new Promise((resolve, reject) => {
+    try {
+      const c = document.createElement('canvas');
+      c.width = width; c.height = height;
+      // Must be in DOM for some browsers to render correctly
+      c.style.position = 'fixed';
+      c.style.left = '-9999px';
+      c.style.top = '-9999px';
+      document.body.appendChild(c);
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#111827';
+      ctx.fillRect(0, 0, width, height);
+      const chart = new Chart(ctx, {
+        type,
+        data: {
+          labels,
+          datasets: [{ data, backgroundColor: colors, borderWidth: 0, borderRadius: type === 'bar' ? 4 : 0 }]
         },
-        scales: type === 'bar' ? {
-          x: { ticks: { color: '#94a3b8', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
-          y: { ticks: { color: '#94a3b8', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } }
-        } : {},
-        cutout: type === 'doughnut' ? '60%' : undefined,
-        maintainAspectRatio: false
-      }
-    });
-    // Small delay so chart renders
-    setTimeout(() => {
-      const img = c.toDataURL('image/png');
-      chart.destroy();
-      resolve(img);
-    }, 80);
+        options: {
+          animation: { duration: 0 },
+          responsive: false,
+          plugins: {
+            legend: {
+              display: type !== 'bar',
+              labels: { color: '#94a3b8', font: { size: 10 }, padding: 8, boxWidth: 10 }
+            }
+          },
+          scales: type === 'bar' ? {
+            x: { ticks: { color: '#94a3b8', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+            y: { ticks: { color: '#94a3b8', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } }
+          } : {},
+          cutout: type === 'doughnut' ? '60%' : undefined,
+          maintainAspectRatio: false
+        }
+      });
+      // Increased delay + requestAnimationFrame to ensure render is complete
+      requestAnimationFrame(() => {
+        setTimeout(() => {
+          try {
+            const img = c.toDataURL('image/png');
+            chart.destroy();
+            document.body.removeChild(c);
+            resolve(img);
+          } catch(e) {
+            document.body.removeChild(c);
+            reject(e);
+          }
+        }, 200);
+      });
+    } catch(e) {
+      reject(e);
+    }
   });
 }
 
@@ -608,9 +626,20 @@ async function generatePDF() {
   const analyses = allAnalyses.filter(a=>!a.error);
   if(analyses.length === 0) { showToast('No analyses to export yet', 'error'); return; }
 
+  const btn = document.querySelector('.export-btn');
+  if(btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Building…'; }
   showToast('Building PDF report…', 'info');
 
-  const { jsPDF } = window.jspdf;
+  try {
+
+  // Support both module styles jsPDF CDN may expose
+  const jspdfLib = window.jspdf || window.jsPDF;
+  if(!jspdfLib) {
+    showToast('PDF library failed to load. Please refresh and try again.', 'error');
+    if(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-download"></i> Download PDF Report'; }
+    return;
+  }
+  const { jsPDF } = jspdfLib;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
   const pw = 210, ml = 18, mr = 18, usable = pw - ml - mr;
 
@@ -878,6 +907,13 @@ async function generatePDF() {
 
   doc.save(`clickme-exe-report-${Date.now()}.pdf`);
   showToast('PDF report downloaded', 'success');
+
+  } catch(err) {
+    console.error('PDF generation error:', err);
+    showToast('PDF export failed: ' + (err.message || 'Unknown error. Check console.'), 'error');
+  } finally {
+    if(btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-download"></i> Download PDF Report'; }
+  }
 }
 
 // ===== TOAST =====
