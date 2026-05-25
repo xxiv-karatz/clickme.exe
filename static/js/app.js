@@ -48,6 +48,11 @@ function setupEventListeners() {
   // Theme toggle
   document.getElementById('themeToggle').addEventListener('click', toggleTheme);
 
+  // ESC closes batch detail modal
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeBatchDetailModal();
+  });
+
   // Char count
   document.getElementById('msgInput').addEventListener('input', function() {
     const len = this.value.length;
@@ -371,20 +376,89 @@ async function processCsvFile(file) {
   }
 }
 
+// Store batch results for modal access
+let batchResultsStore = [];
+
 function renderBatchResults(results) {
+  batchResultsStore = results;
   const ok = results.filter(r=>!r.error);
   document.getElementById('batchSummary').textContent = `${ok.length} of ${results.length} messages analyzed successfully`;
   const listEl = document.getElementById('batchList');
-  listEl.innerHTML = results.map(r => {
+  listEl.innerHTML = results.map((r, i) => {
     if(r.error) return `<div class="batch-item"><span class="batch-msg" style="color:#ef4444">Error: ${r.error}</span></div>`;
     const scoreColor = r.exploitability_score >= 70 ? 'risk-high' : r.exploitability_score >= 40 ? 'risk-medium' : 'risk-low';
     return `<div class="batch-item">
       <span class="batch-msg">${r.original_message || '—'}</span>
       <span class="batch-cat">${formatCategory(r.attack_category)}</span>
       <span class="batch-score risk-badge ${scoreColor}">${r.exploitability_score}</span>
+      <button class="btn-view-details" onclick="openBatchDetailModal(${i})">
+        <i class="fas fa-magnifying-glass"></i> Details
+      </button>
     </div>`;
   }).join('');
   document.getElementById('batchResults').style.display = 'block';
+}
+
+function openBatchDetailModal(idx) {
+  const d = batchResultsStore[idx];
+  if(!d || d.error) return;
+
+  // Populate modal fields
+  const rb = document.getElementById('modalRisk');
+  rb.textContent = (d.risk_level || 'UNKNOWN').toUpperCase();
+  rb.className = 'risk-badge risk-' + (d.risk_level || 'medium');
+
+  document.getElementById('modalMsgPreview').textContent = d.original_message || '—';
+  document.getElementById('modalCategory').textContent = formatCategory(d.attack_category);
+  document.getElementById('modalConfidence').textContent = (d.confidence_score || 0) + '%';
+  document.getElementById('modalScore').textContent = d.exploitability_score || 0;
+
+  // Mini gauge
+  drawModalGauge(d.exploitability_score || 0);
+
+  document.getElementById('modalMitre').innerHTML = (d.mitre_attack_mapping || []).map(t =>
+    `<span class="mitre-tag">${t}</span>`).join('') || '<span style="color:var(--muted)">None</span>';
+
+  document.getElementById('modalTriggers').innerHTML = (d.psychological_triggers || []).map(t =>
+    `<span class="trigger-tag t-${t}">${t.replace(/_/g,' ')}</span>`).join('') || '<span style="color:var(--muted)">None detected</span>';
+
+  document.getElementById('modalIndicators').innerHTML = (d.technical_indicators || []).map(i =>
+    `<li>${i.replace(/_/g,' ')}</li>`).join('') || '<li>No specific indicators</li>';
+
+  document.getElementById('modalNarrative').textContent = d.narrative_summary || '';
+  document.getElementById('modalUserDefense').textContent = d.defense_for_user || '';
+  document.getElementById('modalITDefense').textContent = d.defense_for_it || '';
+
+  document.getElementById('batchDetailModal').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function closeBatchDetailModal() {
+  document.getElementById('batchDetailModal').classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function drawModalGauge(score) {
+  const canvas = document.getElementById('modalGaugeCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const cx = 60, cy = 60, r = 50, lw = 10;
+  ctx.clearRect(0, 0, 120, 120);
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, Math.PI * 0.75, Math.PI * 2.25);
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  ctx.lineWidth = lw;
+  ctx.lineCap = 'round';
+  ctx.stroke();
+  const pct = score / 100;
+  const color = score >= 75 ? '#ef4444' : score >= 50 ? '#f59e0b' : '#22c55e';
+  const angle = Math.PI * 0.75 + pct * Math.PI * 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, Math.PI * 0.75, angle);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = lw;
+  ctx.lineCap = 'round';
+  ctx.stroke();
 }
 
 // ===== EXAMPLES =====
@@ -422,100 +496,385 @@ function updateExportCount() {
   document.getElementById('exportCount').textContent = n + ' ' + (n === 1 ? 'analysis' : 'analyses');
 }
 
-function generatePDF() {
+// ===== PDF HELPERS =====
+function pdfBg(doc) {
+  // Full dark background fill for current page
+  doc.setFillColor(11, 15, 25);
+  doc.rect(0, 0, 210, 297, 'F');
+}
+
+function pdfNewPage(doc) {
+  doc.addPage();
+  pdfBg(doc);
+}
+
+function pdfCheckPage(doc, y, needed) {
+  if (y + needed > 280) {
+    pdfNewPage(doc);
+    return 20;
+  }
+  return y;
+}
+
+function pdfSectionLabel(doc, text, x, y) {
+  doc.setFontSize(7.5);
+  doc.setTextColor(59, 130, 246);
+  doc.setFont(undefined, 'bold');
+  doc.text(text.toUpperCase(), x, y);
+  doc.setFont(undefined, 'normal');
+  return y + 5;
+}
+
+function pdfHRule(doc, x, y, w) {
+  doc.setFillColor(30, 42, 62);
+  doc.rect(x, y, w, 0.4, 'F');
+  return y + 5;
+}
+
+function pdfScoreBar(doc, score, x, y, w) {
+  const color = score >= 75 ? [239,68,68] : score >= 50 ? [245,158,11] : [34,197,94];
+  doc.setFillColor(25, 35, 52);
+  doc.roundedRect(x, y, w, 4, 1, 1, 'F');
+  const filled = Math.max(2, (score / 100) * w);
+  doc.setFillColor(...color);
+  doc.roundedRect(x, y, filled, 4, 1, 1, 'F');
+  return y + 7;
+}
+
+// Render a mini gauge to an offscreen canvas and return base64
+function renderGaugeToBase64(score, size = 100) {
+  const c = document.createElement('canvas');
+  c.width = size; c.height = size;
+  const ctx = c.getContext('2d');
+  // Dark bg
+  ctx.fillStyle = '#0b0f19';
+  ctx.fillRect(0, 0, size, size);
+  const cx = size/2, cy = size/2, r = size*0.42, lw = size*0.09;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, Math.PI * 0.75, Math.PI * 2.25);
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke();
+  const color = score >= 75 ? '#ef4444' : score >= 50 ? '#f59e0b' : '#22c55e';
+  const angle = Math.PI * 0.75 + (score/100) * Math.PI * 1.5;
+  ctx.beginPath();
+  ctx.arc(cx, cy, r, Math.PI * 0.75, angle);
+  ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round'; ctx.stroke();
+  ctx.fillStyle = '#ffffff'; ctx.font = `bold ${size*0.22}px sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(String(score), cx, cy);
+  return c.toDataURL('image/png');
+}
+
+// Render a chart to base64 using a hidden canvas
+function renderChartToBase64(type, labels, data, colors, width=300, height=160) {
+  return new Promise(resolve => {
+    const c = document.createElement('canvas');
+    c.width = width; c.height = height;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#111827';
+    ctx.fillRect(0, 0, width, height);
+    const chart = new Chart(ctx, {
+      type,
+      data: {
+        labels,
+        datasets: [{ data, backgroundColor: colors, borderWidth: 0, borderRadius: type === 'bar' ? 4 : 0 }]
+      },
+      options: {
+        animation: false,
+        plugins: {
+          legend: {
+            display: type !== 'bar',
+            labels: { color: '#94a3b8', font: { size: 10 }, padding: 8, boxWidth: 10 }
+          }
+        },
+        scales: type === 'bar' ? {
+          x: { ticks: { color: '#94a3b8', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } },
+          y: { ticks: { color: '#94a3b8', font: { size: 9 } }, grid: { color: 'rgba(255,255,255,0.05)' } }
+        } : {},
+        cutout: type === 'doughnut' ? '60%' : undefined,
+        maintainAspectRatio: false
+      }
+    });
+    // Small delay so chart renders
+    setTimeout(() => {
+      const img = c.toDataURL('image/png');
+      chart.destroy();
+      resolve(img);
+    }, 80);
+  });
+}
+
+async function generatePDF() {
   const analyses = allAnalyses.filter(a=>!a.error);
   if(analyses.length === 0) { showToast('No analyses to export yet', 'error'); return; }
 
+  showToast('Building PDF report…', 'info');
+
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
-  const pw = 210, ml = 20, mr = 20, usable = pw - ml - mr;
-  let y = 20;
+  const pw = 210, ml = 18, mr = 18, usable = pw - ml - mr;
 
-  const addText = (text, size, color, x, wrap) => {
-    doc.setFontSize(size);
-    doc.setTextColor(...color);
-    if(wrap) {
-      const lines = doc.splitTextToSize(String(text), wrap);
-      doc.text(lines, x, y);
-      y += lines.length * (size * 0.4) + 2;
-    } else {
-      doc.text(String(text), x, y);
-    }
-  };
+  // ── Page 1: Cover ────────────────────────────────────────────────────
+  pdfBg(doc);
 
-  const checkPage = (needed) => {
-    if(y + needed > 275) { doc.addPage(); y = 20; }
-  };
-
-  // Header
-  doc.setFillColor(14, 17, 23);
-  doc.rect(0, 0, 210, 297, 'F');
+  // Accent header bar
+  doc.setFillColor(15, 23, 42);
+  doc.rect(0, 0, 210, 52, 'F');
+  // Left accent stripe
   doc.setFillColor(59, 130, 246);
-  doc.rect(0, 0, 210, 36, 'F');
-  doc.setFontSize(18); doc.setTextColor(255,255,255);
-  doc.text('clickme.exe', ml, 16);
-  doc.setFontSize(10); doc.setTextColor(180,200,230);
-  doc.text('Social Engineering Forensics Report', ml, 24);
-  doc.text('Generated: ' + new Date().toLocaleString(), ml, 31);
-  y = 48;
+  doc.rect(0, 0, 5, 52, 'F');
 
-  // Summary
+  doc.setFontSize(26); doc.setTextColor(255,255,255); doc.setFont(undefined,'bold');
+  doc.text('clickme.exe', ml + 4, 22);
+  doc.setFontSize(11); doc.setTextColor(148,163,184); doc.setFont(undefined,'normal');
+  doc.text('Social Engineering Forensics Report', ml + 4, 31);
+  doc.setFontSize(9); doc.setTextColor(71,85,105);
+  doc.text('Generated: ' + new Date().toLocaleString(), ml + 4, 38);
+  doc.text('CONFIDENTIAL — Defensive Use Only', ml + 4, 44);
+
+  // Summary stats row
+  let y = 66;
   const avgScore = Math.round(analyses.reduce((s,a)=>s+(a.exploitability_score||0),0)/analyses.length);
-  doc.setFontSize(12); doc.setTextColor(59,130,246);
-  doc.text('SESSION SUMMARY', ml, y); y += 8;
-  doc.setFontSize(10); doc.setTextColor(200,210,220);
-  doc.text(`Total analyses: ${analyses.length}`, ml, y); y += 6;
-  doc.text(`Average exploitability score: ${avgScore}/100`, ml, y); y += 6;
   const highRisk = analyses.filter(a=>a.risk_level==='high'||a.risk_level==='critical').length;
-  doc.text(`High/critical risk messages: ${highRisk}`, ml, y); y += 14;
+  const trigMap = {};
+  analyses.forEach(a=>(a.psychological_triggers||[]).forEach(t=>trigMap[t]=(trigMap[t]||0)+1));
+  const topTrig = Object.entries(trigMap).sort((a,b)=>b[1]-a[1])[0];
 
-  // Each analysis
-  analyses.forEach((a, i) => {
-    checkPage(50);
-    doc.setFillColor(20, 28, 40);
-    doc.roundedRect(ml-2, y-4, usable+4, 8, 2, 2, 'F');
-    doc.setFontSize(11); doc.setTextColor(59,130,246);
-    doc.text(`Analysis ${i+1}: ${formatCategory(a.attack_category)}`, ml, y+2); y += 10;
+  const statBoxes = [
+    { label: 'Total Analysed', value: String(analyses.length), color: [59,130,246] },
+    { label: 'Avg Exploit Score', value: avgScore + '/100', color: avgScore>=70?[239,68,68]:avgScore>=45?[245,158,11]:[34,197,94] },
+    { label: 'High/Critical', value: String(highRisk), color: [239,68,68] },
+    { label: 'Top Trigger', value: topTrig ? topTrig[0].replace(/_/g,' ') : '—', color: [139,92,246] }
+  ];
+  const boxW = (usable - 9) / 4;
+  statBoxes.forEach((sb, i) => {
+    const bx = ml + i * (boxW + 3);
+    doc.setFillColor(17, 25, 40);
+    doc.roundedRect(bx, y, boxW, 20, 2, 2, 'F');
+    doc.setFillColor(...sb.color);
+    doc.roundedRect(bx, y, boxW, 1.5, 0, 0, 'F');
+    doc.setFontSize(14); doc.setTextColor(...sb.color); doc.setFont(undefined,'bold');
+    doc.text(sb.value, bx + boxW/2, y + 11, { align: 'center' });
+    doc.setFontSize(7); doc.setTextColor(100,116,139); doc.setFont(undefined,'normal');
+    doc.text(sb.label.toUpperCase(), bx + boxW/2, y + 17, { align: 'center' });
+  });
+  y += 28;
 
-    const riskColors = {low:[34,197,94],medium:[245,158,11],high:[239,68,68],critical:[220,38,38]};
-    const rc = riskColors[a.risk_level]||[100,100,100];
-    doc.setFontSize(10); doc.setTextColor(...rc);
-    doc.text(`Risk: ${(a.risk_level||'').toUpperCase()}  |  Score: ${a.exploitability_score}/100  |  Confidence: ${a.confidence_score}%`, ml, y); y += 8;
+  // ── Charts section ──────────────────────────────────────────────────
+  y = pdfCheckPage(doc, y, 10);
+  doc.setFontSize(9); doc.setTextColor(59,130,246); doc.setFont(undefined,'bold');
+  doc.text('SESSION ANALYTICS', ml, y); doc.setFont(undefined,'normal');
+  y += 2;
+  doc.setFillColor(59,130,246); doc.rect(ml, y, usable, 0.4, 'F');
+  y += 6;
 
-    if(a.psychological_triggers?.length) {
-      doc.setTextColor(150,163,180);
-      doc.text('Triggers: ' + a.psychological_triggers.join(', '), ml, y, {maxWidth: usable}); y += 7;
-    }
-    if(a.mitre_attack_mapping?.length) {
-      doc.text('MITRE: ' + a.mitre_attack_mapping.join(', '), ml, y); y += 7;
-    }
+  // Build charts in parallel
+  const trigSorted = Object.entries(trigMap).sort((a,b)=>b[1]-a[1]).slice(0,7);
+  const catMap = {};
+  analyses.forEach(a=>{ const c=a.attack_category||'unknown'; catMap[c]=(catMap[c]||0)+1; });
+  const catSorted = Object.entries(catMap).sort((a,b)=>b[1]-a[1]).slice(0,7);
+  const riskMap = {low:0,medium:0,high:0,critical:0};
+  analyses.forEach(a=>{ const r=a.risk_level||'medium'; riskMap[r]=(riskMap[r]||0)+1; });
+  const riskData = Object.entries(riskMap).filter(([,v])=>v>0);
 
-    checkPage(20);
-    doc.setTextColor(180,190,200);
-    const narLines = doc.splitTextToSize(a.narrative_summary||'', usable);
-    doc.text(narLines, ml, y); y += narLines.length * 5 + 6;
+  const palette = ['#3b82f6','#8b5cf6','#ef4444','#f59e0b','#22c55e','#06b6d4','#ec4899'];
+  const riskColors2 = {low:'#22c55e',medium:'#f59e0b',high:'#ef4444',critical:'#dc2626'};
 
-    checkPage(20);
-    doc.setTextColor(100,130,180);
-    doc.text('User defense:', ml, y); y += 5;
-    doc.setTextColor(160,175,190);
-    const udLines = doc.splitTextToSize(a.defense_for_user||'', usable);
-    doc.text(udLines, ml, y); y += udLines.length * 5 + 4;
+  const [trigChart, catChart, riskChart] = await Promise.all([
+    renderChartToBase64('bar', trigSorted.map(([t])=>t.replace(/_/g,' ')), trigSorted.map(([,v])=>v), palette.slice(0,trigSorted.length), 340, 155),
+    renderChartToBase64('doughnut', catSorted.map(([c])=>formatCategory(c)), catSorted.map(([,v])=>v), palette.slice(0,catSorted.length), 220, 155),
+    renderChartToBase64('pie', riskData.map(([k])=>k), riskData.map(([,v])=>v), riskData.map(([k])=>riskColors2[k]||'#64748b'), 190, 155)
+  ]);
 
-    doc.setTextColor(139,92,246);
-    doc.text('IT/SOC defense:', ml, y); y += 5;
-    doc.setTextColor(160,175,190);
-    const itLines = doc.splitTextToSize(a.defense_for_it||'', usable);
-    doc.text(itLines, ml, y); y += itLines.length * 5 + 10;
+  // Place charts: triggers bar (wider), cats doughnut, risk pie
+  const chartH = 42; // mm height
+  y = pdfCheckPage(doc, y, chartH + 16);
 
-    doc.setFillColor(30,40,55);
-    doc.rect(ml, y, usable, 0.5, 'F');
-    y += 8;
+  // Triggers bar - left 60%
+  const trigW = usable * 0.56;
+  doc.setFillColor(15, 22, 38);
+  doc.roundedRect(ml, y, trigW, chartH + 8, 2, 2, 'F');
+  doc.setFontSize(7); doc.setTextColor(100,116,139);
+  doc.text('PSYCHOLOGICAL TRIGGERS', ml + 3, y + 5);
+  doc.addImage(trigChart, 'PNG', ml + 2, y + 7, trigW - 4, chartH);
+
+  // Categories doughnut - right top
+  const catX = ml + trigW + 4;
+  const smallW = usable - trigW - 4;
+  doc.setFillColor(15, 22, 38);
+  doc.roundedRect(catX, y, smallW, chartH + 8, 2, 2, 'F');
+  doc.setFontSize(7); doc.setTextColor(100,116,139);
+  doc.text('ATTACK CATEGORIES', catX + 3, y + 5);
+  doc.addImage(catChart, 'PNG', catX + 1, y + 7, smallW - 2, chartH);
+  y += chartH + 12;
+
+  // Risk pie - small, beneath right column
+  y = pdfCheckPage(doc, y, 36);
+  const riskChartW = smallW;
+  doc.setFillColor(15, 22, 38);
+  doc.roundedRect(catX, y, riskChartW, 34, 2, 2, 'F');
+  doc.setFontSize(7); doc.setTextColor(100,116,139);
+  doc.text('RISK DISTRIBUTION', catX + 3, y + 5);
+  doc.addImage(riskChart, 'PNG', catX + 1, y + 7, riskChartW - 2, 26);
+
+  // Score distribution bar chart beside risk pie
+  const scoreChartW = trigW;
+  doc.setFillColor(15, 22, 38);
+  doc.roundedRect(ml, y, scoreChartW, 34, 2, 2, 'F');
+  doc.setFontSize(7); doc.setTextColor(100,116,139);
+  doc.text('INDIVIDUAL EXPLOITABILITY SCORES', ml + 3, y + 5);
+  let sy = y + 10;
+  const scoreBarW = scoreChartW - 8;
+  analyses.slice(0, 8).forEach((a, i) => {
+    const label = `#${i+1} ${formatCategory(a.attack_category)}`.slice(0, 28);
+    doc.setFontSize(6.5); doc.setTextColor(148,163,184);
+    doc.text(label, ml + 4, sy);
+    sy = pdfScoreBar(doc, a.exploitability_score||0, ml + 4, sy + 1, scoreBarW);
+    sy += 0.5;
   });
 
-  // Footer
-  doc.setFontSize(8); doc.setTextColor(80,100,120);
-  doc.text('clickme.exe — Defensive use only. No data was stored.', ml, 285);
+  y += 40;
+
+  // ── Individual Analysis Pages ─────────────────────────────────────
+  analyses.forEach((a, idx) => {
+    pdfNewPage(doc);
+    let y = 0;
+
+    // Analysis header band
+    const riskColorMap = {low:[34,197,94],medium:[245,158,11],high:[239,68,68],critical:[220,38,38]};
+    const rc = riskColorMap[a.risk_level] || [100,116,139];
+    doc.setFillColor(15, 22, 38);
+    doc.rect(0, 0, 210, 42, 'F');
+    doc.setFillColor(...rc);
+    doc.rect(0, 0, 5, 42, 'F');
+
+    doc.setFontSize(8); doc.setTextColor(...rc); doc.setFont(undefined,'bold');
+    doc.text(`ANALYSIS ${idx + 1} OF ${analyses.length}`, ml + 4, 10);
+    doc.setFontSize(14); doc.setTextColor(255,255,255);
+    doc.text(formatCategory(a.attack_category), ml + 4, 20);
+    doc.setFontSize(8); doc.setTextColor(148,163,184); doc.setFont(undefined,'normal');
+    doc.text(`Risk: ${(a.risk_level||'').toUpperCase()}   Exploitability: ${a.exploitability_score}/100   Confidence: ${a.confidence_score}%`, ml + 4, 28);
+    if (a.original_message) {
+      const msgPreview = doc.splitTextToSize('"' + a.original_message + '"', usable - 30);
+      doc.setFontSize(7.5); doc.setTextColor(71,85,105); doc.setFont(undefined,'italic');
+      doc.text(msgPreview.slice(0,2), ml + 4, 36);
+      doc.setFont(undefined,'normal');
+    }
+
+    // Gauge image top right
+    const gaugeImg = renderGaugeToBase64(a.exploitability_score||0, 120);
+    doc.addImage(gaugeImg, 'PNG', 210 - mr - 22, 6, 22, 22);
+
+    y = 50;
+
+    // MITRE tags inline
+    if ((a.mitre_attack_mapping||[]).length) {
+      doc.setFontSize(7); doc.setTextColor(100,116,139);
+      doc.text('MITRE ATT&CK:', ml, y);
+      let mx = ml + 24;
+      (a.mitre_attack_mapping||[]).forEach(t => {
+        doc.setFillColor(30, 41, 59);
+        doc.roundedRect(mx - 1, y - 4, t.length * 1.8 + 4, 6, 1, 1, 'F');
+        doc.setTextColor(99,179,237); doc.setFontSize(7);
+        doc.text(t, mx + 1, y);
+        mx += t.length * 1.8 + 7;
+      });
+      y += 8;
+    }
+
+    // Triggers
+    y = pdfCheckPage(doc, y, 16);
+    y = pdfSectionLabel(doc, 'Psychological Triggers', ml, y);
+    let tx = ml;
+    const trow = y;
+    (a.psychological_triggers||[]).forEach(t => {
+      const tw = t.length * 1.9 + 8;
+      if (tx + tw > pw - mr) { y += 8; tx = ml; }
+      doc.setFillColor(30, 41, 59);
+      doc.roundedRect(tx, y - 4.5, tw, 6.5, 1.5, 1.5, 'F');
+      doc.setFillColor(59,130,246);
+      doc.roundedRect(tx, y - 4.5, 1.5, 6.5, 0, 0, 'F');
+      doc.setFontSize(7.5); doc.setTextColor(148,163,184);
+      doc.text(t.replace(/_/g,' '), tx + 3, y);
+      tx += tw + 3;
+    });
+    y += 10;
+
+    // Technical indicators
+    y = pdfCheckPage(doc, y, 20);
+    y = pdfSectionLabel(doc, 'Technical Indicators', ml, y);
+    (a.technical_indicators||[]).forEach(ind => {
+      y = pdfCheckPage(doc, y, 8);
+      doc.setFillColor(20, 30, 48);
+      doc.rect(ml, y - 3.5, usable, 5.5, 'F');
+      doc.setFillColor(239, 68, 68);
+      doc.rect(ml, y - 3.5, 2, 5.5, 'F');
+      doc.setFontSize(8); doc.setTextColor(203, 213, 225);
+      doc.text(ind.replace(/_/g,' '), ml + 5, y);
+      y += 7;
+    });
+    y += 3;
+
+    // Narrative
+    y = pdfCheckPage(doc, y, 24);
+    y = pdfSectionLabel(doc, 'Attack Narrative', ml, y);
+    doc.setFillColor(14, 20, 34);
+    const narLines = doc.splitTextToSize(a.narrative_summary||'', usable - 6);
+    doc.roundedRect(ml, y - 3, usable, narLines.length * 5 + 6, 2, 2, 'F');
+    doc.setFillColor(99, 102, 241);
+    doc.roundedRect(ml, y - 3, 2, narLines.length * 5 + 6, 1, 1, 'F');
+    doc.setFontSize(8.5); doc.setTextColor(203, 213, 225);
+    doc.text(narLines, ml + 5, y);
+    y += narLines.length * 5 + 8;
+
+    // Defense grid (two columns)
+    y = pdfCheckPage(doc, y, 36);
+    const halfW = (usable - 4) / 2;
+
+    // User defense
+    y = pdfSectionLabel(doc, 'User Defense', ml, y);
+    const udLines = doc.splitTextToSize(a.defense_for_user||'', halfW - 8);
+    const udH = udLines.length * 4.8 + 10;
+    doc.setFillColor(14, 20, 34);
+    doc.roundedRect(ml, y - 3, halfW, udH, 2, 2, 'F');
+    doc.setFillColor(34, 197, 94);
+    doc.roundedRect(ml, y - 3, 2, udH, 1, 1, 'F');
+    doc.setFontSize(8); doc.setTextColor(167, 243, 208);
+    doc.text('For End Users', ml + 5, y + 1);
+    doc.setTextColor(148, 163, 184);
+    doc.text(udLines, ml + 5, y + 7);
+
+    // IT defense (same row)
+    const itX = ml + halfW + 4;
+    y = pdfSectionLabel(doc, 'IT / SOC Defense', itX, y - 5) - 0;
+    const itLines = doc.splitTextToSize(a.defense_for_it||'', halfW - 8);
+    const itH = Math.max(udH, itLines.length * 4.8 + 10);
+    doc.setFillColor(14, 20, 34);
+    doc.roundedRect(itX, y - 3, halfW, itH, 2, 2, 'F');
+    doc.setFillColor(139, 92, 246);
+    doc.roundedRect(itX, y - 3, 2, itH, 1, 1, 'F');
+    doc.setFontSize(8); doc.setTextColor(196, 181, 253);
+    doc.text('For Security Teams', itX + 5, y + 1);
+    doc.setTextColor(148, 163, 184);
+    doc.text(itLines, itX + 5, y + 7);
+
+    y += Math.max(udH, itH) + 5;
+
+    // Footer line
+    doc.setFillColor(22, 32, 52);
+    doc.rect(0, 284, 210, 13, 'F');
+    doc.setFontSize(7); doc.setTextColor(51,65,85);
+    doc.text('clickme.exe — Defensive use only · No data stored · https://clickme-exe.onrender.com', ml, 290);
+    doc.text(`Page ${idx + 2}`, 210 - mr, 290, { align: 'right' });
+  });
+
+  // Cover page footer
+  doc.setPage(1);
+  doc.setFillColor(22, 32, 52);
+  doc.rect(0, 284, 210, 13, 'F');
+  doc.setFontSize(7); doc.setTextColor(51,65,85);
+  doc.text('clickme.exe — Defensive use only · No data stored · https://clickme-exe.onrender.com', ml, 290);
+  doc.text('Page 1', 210 - mr, 290, { align: 'right' });
 
   doc.save(`clickme-exe-report-${Date.now()}.pdf`);
   showToast('PDF report downloaded', 'success');

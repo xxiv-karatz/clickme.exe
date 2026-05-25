@@ -11,7 +11,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
-<link rel="icon" type="image/png" href="/static/favicon.ico">
+<link rel="icon" type="image/png" href="/../static/favicon.ico">
 </head>
 <body class="dark">
 
@@ -278,6 +278,72 @@
     </div>
   </main>
 </div>
+
+<!-- Batch Detail Modal -->
+<div id="batchDetailModal" class="batch-modal-overlay" onclick="if(event.target===this)closeBatchDetailModal()">
+  <div class="batch-modal">
+    <button class="modal-close" onclick="closeBatchDetailModal()"><i class="fas fa-xmark"></i></button>
+    <div class="modal-header">
+      <div>
+        <div class="modal-title"><i class="fas fa-file-shield"></i> Detailed Forensic Report</div>
+        <div class="modal-msg-preview" id="modalMsgPreview"></div>
+      </div>
+      <span class="risk-badge" id="modalRisk">—</span>
+    </div>
+
+    <div class="modal-score-row">
+      <div class="gauge-wrap">
+        <canvas id="modalGaugeCanvas" width="120" height="120"></canvas>
+        <div class="gauge-center">
+          <div class="gauge-num" id="modalScore">—</div>
+          <div class="gauge-label">exploitability</div>
+        </div>
+      </div>
+      <div class="score-details">
+        <div class="detail-row">
+          <span class="detail-label">Attack Category</span>
+          <span class="detail-val" id="modalCategory">—</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">Confidence</span>
+          <span class="detail-val confidence-val" id="modalConfidence">—</span>
+        </div>
+        <div class="detail-row">
+          <span class="detail-label">MITRE ATT&amp;CK</span>
+          <div class="mitre-tags" id="modalMitre"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-block">
+      <div class="block-label">Psychological Triggers</div>
+      <div class="tags-row" id="modalTriggers"></div>
+    </div>
+
+    <div class="section-block">
+      <div class="block-label">Technical Indicators</div>
+      <ul class="indicator-list" id="modalIndicators"></ul>
+    </div>
+
+    <div class="section-block">
+      <div class="block-label">Narrative Summary</div>
+      <p class="narrative-text" id="modalNarrative"></p>
+    </div>
+    
+    <div class="defense-grid">
+      <div class="defense-card">
+        <div class="defense-title"><i class="fas fa-user-shield"></i> User Defense</div>
+        <p class="defense-text" id="modalUserDefense"></p>
+      </div>
+      <div class="defense-card defense-it">
+        <div class="defense-title"><i class="fas fa-server"></i> IT / SOC Defense</div>
+        <p class="defense-text" id="modalITDefense"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 
 <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 <script src="{{ url_for('static', filename='js/app.js') }}"></script>
